@@ -1,0 +1,88 @@
+steps:
+  # 1️⃣ Mostrar variables del proyecto (debugging)
+  - name: 'ubuntu'
+    args: ['bash', '-c', 'echo Proyecto: $PROJECT_ID, Región: $LOCATION']
+
+  # 2️⃣ Construir la imagen de WordPress usando los valores de .env
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'WP_VERSION=${_WP_VERSION}'
+      - '--build-arg'
+      - 'WP_CLOUD_RUN_IMG=${_WP_CLOUD_RUN_IMG}'
+      - '-t'
+      - '${_GAR_REGION}/${PROJECT_ID}/${_GAR_REPO}/wp-cloud-run:${SHORT_SHA}'
+      - '.'
+
+  # 3️⃣ Autenticarse en Artifact Registry
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    args: ["gcloud", "auth", "configure-docker", "${_GAR_REGION}"]
+
+  # 4️⃣ Subir la imagen a Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_GAR_REGION}/${PROJECT_ID}/${_GAR_REPO}/wp-cloud-run:${SHORT_SHA}'
+
+  # 5️⃣ Desplegar en Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'wp-cloud-run'
+      - '--image'
+      - '${_GAR_REGION}/${PROJECT_ID}/${_GAR_REPO}/wp-cloud-run:${SHORT_SHA}'
+      - '--region'
+      - '${_LOCATION}'
+      - '--platform'
+      - 'managed'
+      - '--memory'
+      - '512Mi'
+      - '--cpu'
+      - '1'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '5'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'WORDPRESS_DB_HOST=${_WORDPRESS_DB_HOST},DB_HOST=${_DB_HOST},WORDPRESS_DB_USER=${_WORDPRESS_DB_USER},DB_USER=${_DB_USER},WORDPRESS_DB_PASSWORD=${_WORDPRESS_DB_PASSWORD},DB_PASSWORD=${_DB_PASSWORD},WORDPRESS_DB_NAME=${_WORDPRESS_DB_NAME},DB_NAME=${_DB_NAME}'
+
+  # 6️⃣ Hacer público el servicio en Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'services'
+      - 'add-iam-policy-binding'
+      - 'wp-cloud-run'
+      - '--region'
+      - '${_LOCATION}'
+      - '--member'
+      - 'allUsers'
+      - '--role'
+      - 'roles/run.invoker'
+
+images:
+  - '${_GAR_REGION}/${PROJECT_ID}/${_GAR_REPO}/wp-cloud-run:${SHORT_SHA}'
+
+substitutions:
+  _WP_VERSION: "6.7.1-php8.3-apache"
+  _WP_CLOUD_RUN_IMG: "6.7.1-1.0"
+  _PROJECT_ID: "davinci-triplea-portalweb-dev"
+  _GAR_REGION: "us-central1-docker.pkg.dev"
+  _GAR_REPO: "wp-cloud-run"
+  _LOCATION: "us-central1"
+  _WORDPRESS_DB_HOST: ":/cloudsql/davinci-triplea-portalweb-dev:us-central1:the1"
+  _DB_HOST: ":/cloudsql/davinci-triplea-portalweb-dev:us-central1:the1"
+  _WORDPRESS_DB_USER: "db"
+  _DB_USER: "db"
+  _WORDPRESS_DB_PASSWORD: "db"
+  _DB_PASSWORD: "db"
+  _WORDPRESS_DB_NAME: "wordpress"
+  _DB_NAME: "wordpress"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
